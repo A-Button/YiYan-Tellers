@@ -9,10 +9,16 @@ yyts：一个简单的终端一言输出实现
 - 响应时间约2ms
 
 ## 安装
-### 从源代码安装
+### 从源代码构建
 ```bash
 git clone https://github.com/A-Button/YiYan-Tellers.git
 cd ./YiYan-Tellers
 cargo build --release
 sudo cp ./target/release/yyts /bin
+```
+
+### 从 Releases 安装
+```bash
+tar -xvf yyts-xxx-x.x.x.tar
+sudo cp ./yyts /bin
 ```
