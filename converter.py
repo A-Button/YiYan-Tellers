@@ -15,7 +15,7 @@ def split_hitokoto(text):
     将hitokoto文本按中间分隔符分割为front和behind
     分隔符包括：，。、；
     """
-    separators = "，。、；"
+    separators = "，。、；, . ; "
     
     # 找到所有分隔符的位置
     separator_positions = []

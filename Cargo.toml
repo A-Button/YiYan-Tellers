@@ -5,6 +5,14 @@ edition = "2024"
 
 [dependencies]
 serde = { version = "1.0.228", features = ["derive"] }
-rand = "0.8.5"
+rand = "0.9.2"
 dirs = "6.0.0"
 serde_json = "1.0.145"
+
+[dev-dependencies]
+criterion = "0.7.0"
+
+[[bench]]
+name = "benchmark"
+harness = false
+path = "benches/benchmark.rs"
