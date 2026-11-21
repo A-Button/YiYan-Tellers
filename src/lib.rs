@@ -49,13 +49,11 @@ pub fn home_dir() -> Option<PathBuf> {
 }
 
 pub fn get_config_path() -> PathBuf {
-    if let Ok(path) = env::var("YYTS_SENTENCES") {
+    if let Some(path) = env::var_os("YYTS_SENTENCES") {
         PathBuf::from(path)
     } else {
         let mut home = home_dir().expect("无法获取用户主目录");
-        home.push(".config");
-        home.push("yyts");
-        home.push("sentences.json");
+        home.push(".config/yyts/sentences.json");
         home
     }
 }
@@ -179,11 +177,33 @@ pub(crate) fn measured_width(front: &str, behind: &str, from: &str) -> usize {
 /// 一遍扫描同时得到显示宽度和字符数，避免对同一字符串走两趟。
 #[inline]
 fn scan_width(text: &str) -> (usize, usize) {
+    let bytes = text.as_bytes();
     let mut width = 0usize;
     let mut chars = 0usize;
-    for ch in text.chars() {
-        chars += 1;
-        width += UnicodeWidthChar::width(ch).unwrap_or(0);
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let b0 = bytes[i];
+        if b0 < 0x80 {
+            chars += 1;
+            if (0x20..0x7F).contains(&b0) {
+                width += 1;
+            }
+            i += 1;
+        } else if (0xE4..=0xE9).contains(&b0) {
+            // U+4000..=U+9FFF（CJK 统一表意文字及扩展 A 核心区）全部为 3 字节 UTF-8 且显示宽度为 2。
+            chars += 1;
+            width += 2;
+            i += 3;
+        } else {
+            let mut iter = text[i..].chars();
+            if let Some(ch) = iter.next() {
+                chars += 1;
+                width += UnicodeWidthChar::width(ch).unwrap_or(0);
+                i += ch.len_utf8();
+            } else {
+                break;
+            }
+        }
     }
     (width, chars)
 }
@@ -203,9 +223,8 @@ pub fn terminal_width() -> Option<usize> {
         return Some(width);
     }
 
-    std::env::var("COLUMNS")
-        .ok()
-        .and_then(|value| value.trim().parse::<usize>().ok())
+    std::env::var_os("COLUMNS")
+        .and_then(|value| value.to_string_lossy().trim().parse::<usize>().ok())
         .filter(|width| *width > 0)
 }
 
@@ -228,14 +247,38 @@ fn tty_width(_fd: i32) -> Option<usize> {
 
 #[inline]
 fn count_chars(text: &str) -> usize {
-    text.as_bytes()
-        .iter()
-        .filter(|byte| (**byte & 0xC0) != 0x80)
-        .count()
+    let bytes = text.as_bytes();
+    let mut count = 0usize;
+    let (chunks, remainder) = bytes.as_chunks::<8>();
+    for &chunk in chunks {
+        let word = u64::from_ne_bytes(chunk);
+        // UTF-8 续字节形如 10xxxxxx：最高位为 1 且次高位为 0。
+        let cont = (word & 0x8080_8080_8080_8080) & !(word << 1);
+        count += 8 - (cont.count_ones() as usize);
+    }
+    for &byte in remainder {
+        count += usize::from((byte & 0xC0) != 0x80);
+    }
+    count
 }
 
 /// 每次运行只需要一次随机性：用时钟 + pid 做种子，避免熵源初始化开销。
 pub fn entropy_seed() -> u64 {
+    #[cfg(unix)]
+    let nanos = unsafe {
+        let mut ts = libc::timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
+        if libc::clock_gettime(libc::CLOCK_REALTIME, &mut ts) == 0 {
+            (ts.tv_sec as u64)
+                .wrapping_mul(1_000_000_000)
+                .wrapping_add(ts.tv_nsec as u64)
+        } else {
+            0x9E37_79B9_7F4A_7C15
+        }
+    };
+    #[cfg(not(unix))]
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_nanos() as u64)
@@ -410,6 +453,10 @@ mod tests {
 
     #[test]
     fn measured_width_covers_rendering() {
+        for cp in 0x4000u32..=0x9FFFu32 {
+            let ch = char::from_u32(cp).unwrap();
+            assert_eq!(UnicodeWidthChar::width(ch), Some(2), "codepoint U+{cp:04X}");
+        }
         let cases = [
             ("进攻D点！", "", "战争雷霆"),
             ("众里寻他千百度，蓦然回首，", "那人却在，灯火阑珊处。", "青玉案·元夕"),

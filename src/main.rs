@@ -3,7 +3,14 @@ use std::io::ErrorKind;
 
 fn main() {
     match run() {
-        Ok(()) => {}
+        Ok(()) => {
+            #[cfg(unix)]
+            // SAFETY: 标准输出已通过 `libc::write` 无缓冲直接写出（严禁在 `run()` 中使用带用户态缓冲的 `println!`/`stdout()`），
+            // 直接 `_exit(0)` 可省去进程退出阶段的 TLS / atexit 清理开销。
+            unsafe {
+                libc::_exit(0);
+            }
+        }
         Err(error) => {
             eprintln!("错误: {}", error);
             std::process::exit(1);
