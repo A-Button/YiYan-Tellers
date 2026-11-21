@@ -1,0 +1,3 @@
+[target.x86_64-unknown-linux-musl]
+# 静态非 PIE：省掉 static-pie 的自重定位，明显缩短启动时间。
+rustflags = ["-C", "relocation-model=static", "-C", "link-arg=-no-pie"]
